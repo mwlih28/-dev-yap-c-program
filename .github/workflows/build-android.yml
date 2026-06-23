@@ -86,15 +86,49 @@ jobs:
       # ─── Kotlin sürümü düzelt (expo-modules-core 1.9.25 gerektirir) ─
       - name: Patch Kotlin version to 1.9.25
         run: |
-          # android/build.gradle içindeki kotlinVersion'ı güncelle
-          if [ -f android/build.gradle ]; then
-            sed -i 's/kotlinVersion = "[0-9.]*"/kotlinVersion = "1.9.25"/' android/build.gradle
-            echo "Kotlin version in build.gradle:"
-            grep -n "kotlinVersion" android/build.gradle || echo "(not found as variable)"
-          fi
-          # gradle.properties üzerinden de zorla
-          echo "kotlin.version=1.9.25" >> android/gradle.properties
-          echo "android.suppressUnsupportedCompileSdk=34" >> android/gradle.properties
+          python3 << 'PYEOF'
+          import re, os
+
+          # Tüm .gradle dosyalarını tara ve kotlin sürümünü güncelle
+          for root, dirs, files in os.walk('android'):
+              for fname in files:
+                  if not fname.endswith('.gradle'):
+                      continue
+                  path = os.path.join(root, fname)
+                  with open(path, 'r') as f:
+                      content = f.read()
+                  original = content
+
+                  # kotlinVersion = "x.x.x" veya 'x.x.x' formatı
+                  content = re.sub(
+                      r'(kotlinVersion\s*=\s*)["\'][\d.]+["\']',
+                      r'\g<1>"1.9.25"',
+                      content
+                  )
+                  # kotlin-gradle-plugin:x.x.x formatı
+                  content = re.sub(
+                      r'(kotlin[:\-]gradle[:\-]plugin:)[\d.]+',
+                      r'\g<1>1.9.25',
+                      content
+                  )
+
+                  if content != original:
+                      print(f"Patched: {path}")
+                      with open(path, 'w') as f:
+                          f.write(content)
+
+          # gradle.properties'e de yaz (BOM override)
+          with open('android/gradle.properties', 'a') as f:
+              f.write('\nkotlin.version=1.9.25\n')
+              f.write('android.suppressKotlinVersionCompatibilityCheck=1.9.25\n')
+
+          print("Done.")
+          PYEOF
+
+          # Değişikliği doğrula
+          echo "=== Kotlin version after patch ==="
+          grep -n "kotlin" android/build.gradle | head -10 || true
+          grep "kotlin" android/gradle.properties || true
 
       # ─── Gradle cache ─────────────────────────────────────────────
       - name: Cache Gradle packages
