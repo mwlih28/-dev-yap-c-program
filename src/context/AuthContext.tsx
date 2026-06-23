@@ -11,6 +11,7 @@ import {
 import { doc, setDoc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { auth, db } from '../services/firebaseConfig';
+import { DEFAULT_GROQ_KEY } from '../config/defaults';
 
 export type UserProfile = {
   uid: string;
@@ -51,7 +52,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (firebaseUser) {
         await loadProfile(firebaseUser.uid);
         const key = await AsyncStorage.getItem('groq_api_key');
-        setGroqApiKey(key ?? '');
+        // Kullanıcı kendi key'ini girmişse onu, yoksa build-time enjekte edilen default'u kullan
+        setGroqApiKey(key || DEFAULT_GROQ_KEY);
       } else {
         setProfile(null);
       }
@@ -105,7 +107,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   async function updateGroqKey(key: string) {
     await AsyncStorage.setItem('groq_api_key', key);
-    setGroqApiKey(key);
+    setGroqApiKey(key || DEFAULT_GROQ_KEY);
   }
 
   async function refreshProfile() {

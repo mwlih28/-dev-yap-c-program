@@ -1,0 +1,140 @@
+name: Android APK Build
+
+on:
+  push:
+    branches:
+      - claude/homework-assistant-groq-ti5ff5
+      - main
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: 'Build type (debug/release)'
+        required: false
+        default: 'debug'
+
+jobs:
+  build:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      # ─── Kaynak kodu al ───────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ─── Node.js ─────────────────────────────────────────────────
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      # ─── Java 17 ─────────────────────────────────────────────────
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      # ─── Android SDK ─────────────────────────────────────────────
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Accept Android SDK licenses
+        run: yes | sdkmanager --licenses || true
+
+      - name: Install Android build tools & NDK
+        run: |
+          sdkmanager "build-tools;34.0.0" "platforms;android-34" "ndk;26.1.10909125" --verbose || true
+
+      # ─── npm bağımlılıkları ───────────────────────────────────────
+      - name: Install npm dependencies
+        run: npm ci
+
+      # ─── Groq API Key enjeksiyonu (GitHub Secret'tan) ─────────────
+      - name: Inject Groq API Key
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        run: |
+          python3 << 'EOF'
+          import os
+
+          key = os.environ.get('GROQ_API_KEY', '')
+          if not key:
+              print("WARNING: GROQ_API_KEY secret is not set!")
+          else:
+              print(f"Groq API key found (length: {len(key)})")
+
+          filepath = 'src/config/defaults.ts'
+          with open(filepath, 'r') as f:
+              content = f.read()
+
+          content = content.replace('GROQ_KEY_PLACEHOLDER', key)
+
+          with open(filepath, 'w') as f:
+              f.write(content)
+
+          print("API key injected successfully.")
+          EOF
+
+      # ─── Expo prebuild (native Android kodu üret) ─────────────────
+      - name: Generate Android native project
+        run: npx expo prebuild --platform android --no-install --clean
+        env:
+          EXPO_NO_TELEMETRY: 1
+
+      # ─── Gradle cache ─────────────────────────────────────────────
+      - name: Cache Gradle packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      # ─── Gradlew izinleri ─────────────────────────────────────────
+      - name: Make gradlew executable
+        run: chmod +x android/gradlew
+
+      # ─── APK Build ────────────────────────────────────────────────
+      - name: Build Debug APK
+        working-directory: android
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
+        env:
+          ANDROID_NDK_HOME: ${{ env.ANDROID_NDK_HOME }}
+
+      # ─── APK bilgisi ──────────────────────────────────────────────
+      - name: Show APK info
+        run: |
+          APK_PATH="android/app/build/outputs/apk/debug/app-debug.apk"
+          if [ -f "$APK_PATH" ]; then
+            echo "✅ APK başarıyla oluşturuldu!"
+            echo "Boyut: $(du -sh $APK_PATH | cut -f1)"
+          else
+            echo "❌ APK bulunamadı!"
+            exit 1
+          fi
+
+      # ─── APK'yı artifact olarak yükle ────────────────────────────
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: YAP-Odev-Asistani-debug-${{ github.run_number }}
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 30
+          if-no-files-found: error
+
+      # ─── Build özeti ──────────────────────────────────────────────
+      - name: Build summary
+        if: success()
+        run: |
+          echo "## ✅ Android APK Hazır!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Uygulama:** YAP - Ödev Asistanı" >> $GITHUB_STEP_SUMMARY
+          echo "**Build:** #${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Branch:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "APK'yı indirmek için: Actions > Bu workflow çalışması > Artifacts bölümü" >> $GITHUB_STEP_SUMMARY
