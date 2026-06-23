@@ -83,63 +83,98 @@ jobs:
         env:
           EXPO_NO_TELEMETRY: 1
 
-      # ─── Kotlin sürümü düzelt (expo-modules-core 1.9.25 gerektirir) ─
+      # ─── Kotlin sürümü düzelt ────────────────────────────────────────
+      - name: Print build.gradle for debugging
+        run: |
+          echo "=== android/build.gradle ==="
+          cat android/build.gradle || true
+
       - name: Patch Kotlin version to 1.9.25
         run: |
           python3 << 'PYEOF'
           import re, os
 
-          # Tüm .gradle dosyalarını tara ve kotlin sürümünü güncelle
+          TARGET = '1.9.25'
+          patched = []
+
           for root, dirs, files in os.walk('android'):
               for fname in files:
                   if not fname.endswith('.gradle'):
                       continue
                   path = os.path.join(root, fname)
-                  with open(path, 'r') as f:
-                      content = f.read()
-                  original = content
+                  try:
+                      with open(path, 'r') as f:
+                          content = f.read()
+                      original = content
 
-                  # kotlinVersion = "x.x.x" veya 'x.x.x' formatı
-                  content = re.sub(
-                      r'(kotlinVersion\s*=\s*)["\'][\d.]+["\']',
-                      r'\g<1>"1.9.25"',
-                      content
-                  )
-                  # kotlin-gradle-plugin:x.x.x formatı
-                  content = re.sub(
-                      r'(kotlin[:\-]gradle[:\-]plugin:)[\d.]+',
-                      r'\g<1>1.9.25',
-                      content
-                  )
+                      # Pattern 1: kotlinVersion = "x.x.x"
+                      content = re.sub(
+                          r'(kotlinVersion\s*=\s*)["\'][\d.]+["\']',
+                          f'\\g<1>"{TARGET}"', content)
+                      # Pattern 2: kotlin-gradle-plugin:x.x.x
+                      content = re.sub(
+                          r'(kotlin[:\-]gradle[:\-]plugin:)[\d.]+',
+                          f'\\g<1>{TARGET}', content)
+                      # Pattern 3: id("org.jetbrains.kotlin.*") version "x.x.x"
+                      content = re.sub(
+                          r'(id\s*\(["\']org\.jetbrains\.kotlin[^"\']*["\']\)\s*version\s*)["\'][\d.]+["\']',
+                          f'\\g<1>"{TARGET}"', content)
+                      # Pattern 4: kotlin("android") version "x.x.x"
+                      content = re.sub(
+                          r'(kotlin\s*\(["\']android["\']\)\s*version\s*)["\'][\d.]+["\']',
+                          f'\\g<1>"{TARGET}"', content)
 
-                  if content != original:
-                      print(f"Patched: {path}")
-                      with open(path, 'w') as f:
-                          f.write(content)
+                      if content != original:
+                          patched.append(path)
+                          with open(path, 'w') as f:
+                              f.write(content)
+                  except Exception as e:
+                      print(f"Error: {path}: {e}")
 
-          # gradle.properties'e de yaz (BOM override)
+          print(f"Patched {len(patched)} files: {patched}")
+
+          # gradle.properties override
           with open('android/gradle.properties', 'a') as f:
               f.write('\nkotlin.version=1.9.25\n')
-              f.write('android.suppressKotlinVersionCompatibilityCheck=1.9.25\n')
-
-          print("Done.")
+          print("gradle.properties updated")
           PYEOF
 
-          # Değişikliği doğrula
-          echo "=== Kotlin version after patch ==="
-          grep -n "kotlin" android/build.gradle | head -10 || true
-          grep "kotlin" android/gradle.properties || true
+          # Gradle init script - KGP'yi 1.9.25'e zorla (nuclear option)
+          mkdir -p ~/.gradle/init.d
+          cat > ~/.gradle/init.d/force-kotlin.gradle << 'GRADLE_EOF'
+          allprojects {
+              buildscript {
+                  configurations.all {
+                      resolutionStrategy.eachDependency { details ->
+                          if (details.requested.group == 'org.jetbrains.kotlin') {
+                              details.useVersion '1.9.25'
+                          }
+                      }
+                  }
+              }
+              configurations.all {
+                  resolutionStrategy.eachDependency { details ->
+                      if (details.requested.group == 'org.jetbrains.kotlin') {
+                          details.useVersion '1.9.25'
+                      }
+                  }
+              }
+          }
+          GRADLE_EOF
 
-      # ─── Gradle cache ─────────────────────────────────────────────
+          echo "=== Kotlin lines after patch ==="
+          grep -n "kotlin\|Kotlin" android/build.gradle || true
+
+      # ─── Gradle cache (temiz key ile) ────────────────────────────
       - name: Cache Gradle packages
         uses: actions/cache@v4
         with:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          key: ${{ runner.os }}-gradle-kotlin125-${{ github.run_id }}
           restore-keys: |
-            ${{ runner.os }}-gradle-
+            ${{ runner.os }}-gradle-kotlin125-
 
       # ─── Gradlew izinleri ─────────────────────────────────────────
       - name: Make gradlew executable
@@ -148,7 +183,7 @@ jobs:
       # ─── APK Build ────────────────────────────────────────────────
       - name: Build Debug APK
         working-directory: android
-        run: ./gradlew assembleDebug --no-daemon
+        run: ./gradlew assembleDebug --no-daemon -PkotlinVersion=1.9.25
         env:
           ANDROID_NDK_HOME: ${{ env.ANDROID_NDK_HOME }}
 
