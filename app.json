@@ -1,0 +1,36 @@
+{
+  "expo": {
+    "name": "YAP",
+    "slug": "yap-odev-asistan",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "backgroundColor": "#0A0A1A"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.yap.odevAsistan",
+      "infoPlist": {
+        "NSFaceIDUsageDescription": "YAP uygulamasına hızlı giriş için Face ID kullanılır."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#0A0A1A"
+      },
+      "package": "com.yap.odevAsistan",
+      "softwareKeyboardLayoutMode": "pan"
+    },
+    "plugins": [
+      "expo-linear-gradient",
+      "expo-blur"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "YOUR_EAS_PROJECT_ID"
+      }
+    }
+  }
+}

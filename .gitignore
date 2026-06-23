@@ -1,0 +1,24 @@
+node_modules/
+.expo/
+dist/
+npm-debug.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.orig.*
+web-build/
+ios/
+android/
+.env
+.env.local
+*.env
+
+# Firebase
+.firebaserc
+firebase-debug.log
+
+# OS
+.DS_Store
+Thumbs.db
