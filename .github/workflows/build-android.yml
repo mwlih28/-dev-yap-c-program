@@ -41,9 +41,9 @@ jobs:
       - name: Install Android build tools & NDK
         run: sdkmanager "build-tools;34.0.0" "platforms;android-34" "ndk;26.1.10909125" || true
 
-      # ─── npm bağımlılıkları (lock file olmadan) ──────────────────
+      # ─── npm bağımlılıkları ───────────────────────────────────────
       - name: Install npm dependencies
-        run: npm install
+        run: npm install --legacy-peer-deps
 
       # ─── Groq API Key + Backend URL enjeksiyonu ──────────────────
       - name: Inject secrets into config
