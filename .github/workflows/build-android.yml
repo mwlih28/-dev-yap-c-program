@@ -83,6 +83,19 @@ jobs:
         env:
           EXPO_NO_TELEMETRY: 1
 
+      # ─── Kotlin sürümü düzelt (expo-modules-core 1.9.25 gerektirir) ─
+      - name: Patch Kotlin version to 1.9.25
+        run: |
+          # android/build.gradle içindeki kotlinVersion'ı güncelle
+          if [ -f android/build.gradle ]; then
+            sed -i 's/kotlinVersion = "[0-9.]*"/kotlinVersion = "1.9.25"/' android/build.gradle
+            echo "Kotlin version in build.gradle:"
+            grep -n "kotlinVersion" android/build.gradle || echo "(not found as variable)"
+          fi
+          # gradle.properties üzerinden de zorla
+          echo "kotlin.version=1.9.25" >> android/gradle.properties
+          echo "android.suppressUnsupportedCompileSdk=34" >> android/gradle.properties
+
       # ─── Gradle cache ─────────────────────────────────────────────
       - name: Cache Gradle packages
         uses: actions/cache@v4
