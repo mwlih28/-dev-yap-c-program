@@ -1,38 +1,24 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import {
-  onAuthStateChanged,
-  signInWithEmailAndPassword,
-  createUserWithEmailAndPassword,
-  signOut,
-  sendPasswordResetEmail,
-  updateProfile,
-  User,
-} from 'firebase/auth';
-import { doc, setDoc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { auth, db } from '../services/firebaseConfig';
+import {
+  register as apiRegister,
+  login as apiLogin,
+  clearToken,
+  getToken,
+  getProfile,
+  incrementStat as apiIncrementStat,
+  UserProfile,
+} from '../services/apiService';
 import { DEFAULT_GROQ_KEY } from '../config/defaults';
 
-export type UserProfile = {
-  uid: string;
-  displayName: string;
-  email: string;
-  grade: string;
-  totalQuestions: number;
-  totalCompositions: number;
-  totalSocraticSessions: number;
-  createdAt: any;
-};
-
 type AuthContextType = {
-  user: User | null;
+  userId: string | null;
   profile: UserProfile | null;
   groqApiKey: string;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string, name: string, grade: string) => Promise<void>;
   logOut: () => Promise<void>;
-  resetPassword: (email: string) => Promise<void>;
   updateGroqKey: (key: string) => Promise<void>;
   refreshProfile: () => Promise<void>;
   incrementStat: (field: 'totalQuestions' | 'totalCompositions' | 'totalSocraticSessions') => Promise<void>;
@@ -40,69 +26,66 @@ type AuthContextType = {
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
+const USER_ID_KEY = 'user_id';
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [groqApiKey, setGroqApiKey] = useState('');
   const [loading, setLoading] = useState(true);
 
+  // Uygulama açılışında kayıtlı oturumu kontrol et
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      setUser(firebaseUser);
-      if (firebaseUser) {
-        await loadProfile(firebaseUser.uid);
-        const key = await AsyncStorage.getItem('groq_api_key');
-        // Kullanıcı kendi key'ini girmişse onu, yoksa build-time enjekte edilen default'u kullan
-        setGroqApiKey(key || DEFAULT_GROQ_KEY);
-      } else {
-        setProfile(null);
-      }
-      setLoading(false);
-    });
-
-    return unsubscribe;
+    restoreSession();
   }, []);
 
-  async function loadProfile(uid: string) {
+  async function restoreSession() {
     try {
-      const snap = await getDoc(doc(db, 'users', uid));
-      if (snap.exists()) {
-        setProfile(snap.data() as UserProfile);
+      const [token, storedId, storedKey] = await Promise.all([
+        getToken(),
+        AsyncStorage.getItem(USER_ID_KEY),
+        AsyncStorage.getItem('groq_api_key'),
+      ]);
+
+      if (token && storedId) {
+        setUserId(storedId);
+        setGroqApiKey(storedKey || DEFAULT_GROQ_KEY);
+        // Arka planda profil güncelle, hata olursa sessiz devam et
+        getProfile(storedId)
+          .then(setProfile)
+          .catch(() => {});
       }
-    } catch {}
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function signIn(email: string, password: string) {
-    await signInWithEmailAndPassword(auth, email, password);
+    const { user } = await apiLogin(email, password);
+    await AsyncStorage.setItem(USER_ID_KEY, user.id);
+    setUserId(user.id);
+    setProfile(user);
+    const key = await AsyncStorage.getItem('groq_api_key');
+    setGroqApiKey(key || DEFAULT_GROQ_KEY);
   }
 
   async function signUp(email: string, password: string, name: string, grade: string) {
-    const cred = await createUserWithEmailAndPassword(auth, email, password);
-    await updateProfile(cred.user, { displayName: name });
-
-    const userProfile: UserProfile = {
-      uid: cred.user.uid,
-      displayName: name,
-      email,
-      grade,
-      totalQuestions: 0,
-      totalCompositions: 0,
-      totalSocraticSessions: 0,
-      createdAt: serverTimestamp(),
-    };
-
-    await setDoc(doc(db, 'users', cred.user.uid), userProfile);
-    setProfile(userProfile);
+    const { user } = await apiRegister(email, password, name, grade);
+    await AsyncStorage.setItem(USER_ID_KEY, user.id);
+    setUserId(user.id);
+    setProfile(user);
+    const key = await AsyncStorage.getItem('groq_api_key');
+    setGroqApiKey(key || DEFAULT_GROQ_KEY);
   }
 
   async function logOut() {
-    await signOut(auth);
+    await Promise.all([
+      clearToken(),
+      AsyncStorage.removeItem(USER_ID_KEY),
+    ]);
+    setUserId(null);
     setProfile(null);
     setGroqApiKey('');
-  }
-
-  async function resetPassword(email: string) {
-    await sendPasswordResetEmail(auth, email);
   }
 
   async function updateGroqKey(key: string) {
@@ -111,22 +94,39 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function refreshProfile() {
-    if (user) await loadProfile(user.uid);
+    if (!userId) return;
+    try {
+      const updated = await getProfile(userId);
+      setProfile(updated);
+    } catch {}
   }
 
-  async function incrementStat(field: 'totalQuestions' | 'totalCompositions' | 'totalSocraticSessions') {
-    if (!user) return;
+  async function incrementStat(
+    field: 'totalQuestions' | 'totalCompositions' | 'totalSocraticSessions'
+  ) {
+    if (!userId) return;
     try {
-      await updateDoc(doc(db, 'users', user.uid), {
-        [field]: (profile?.[field] ?? 0) + 1,
-      });
-      setProfile((prev) => prev ? { ...prev, [field]: (prev[field] ?? 0) + 1 } : prev);
+      await apiIncrementStat(userId, field);
+      setProfile((prev) =>
+        prev ? { ...prev, [field]: (prev[field] ?? 0) + 1 } : prev
+      );
     } catch {}
   }
 
   return (
     <AuthContext.Provider
-      value={{ user, profile, groqApiKey, loading, signIn, signUp, logOut, resetPassword, updateGroqKey, refreshProfile, incrementStat }}
+      value={{
+        userId,
+        profile,
+        groqApiKey,
+        loading,
+        signIn,
+        signUp,
+        logOut,
+        updateGroqKey,
+        refreshProfile,
+        incrementStat,
+      }}
     >
       {children}
     </AuthContext.Provider>

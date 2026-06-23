@@ -16,7 +16,7 @@ import GradientButton from '../../components/GradientButton';
 import { Colors, Spacing, BorderRadius, Typography } from '../../theme';
 
 export default function ProfileScreen() {
-  const { user, profile, groqApiKey, logOut, updateGroqKey, refreshProfile } = useAuth();
+  const { userId, profile, groqApiKey, logOut, updateGroqKey } = useAuth();
   const [apiKey, setApiKey] = useState(groqApiKey);
   const [showKey, setShowKey] = useState(false);
   const [savingKey, setSavingKey] = useState(false);
@@ -74,8 +74,8 @@ export default function ProfileScreen() {
           <View style={styles.avatarCircle}>
             <Text style={styles.avatarText}>{initials}</Text>
           </View>
-          <Text style={styles.displayName}>{profile?.displayName ?? user?.displayName ?? 'Kullanıcı'}</Text>
-          <Text style={styles.email}>{user?.email ?? ''}</Text>
+          <Text style={styles.displayName}>{profile?.displayName ?? 'Kullanıcı'}</Text>
+          <Text style={styles.email}>{profile?.email ?? ''}</Text>
           <View style={styles.gradeBadge}>
             <Text style={styles.gradeText}>🎓 {profile?.grade ?? '—'}</Text>
           </View>
@@ -164,8 +164,8 @@ export default function ProfileScreen() {
             <View style={[styles.infoRow, styles.infoRowLast]}>
               <Text style={styles.infoLabel}>Hesap Oluşturuldu</Text>
               <Text style={styles.infoValue}>
-                {profile?.createdAt?.toDate
-                  ? profile.createdAt.toDate().toLocaleDateString('tr-TR')
+                {profile?.createdAt
+                  ? new Date(profile.createdAt).toLocaleDateString('tr-TR')
                   : 'Bilinmiyor'}
               </Text>
             </View>

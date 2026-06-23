@@ -7,7 +7,6 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "build:android": "eas build --platform android",
-    "build:ios": "eas build --platform ios",
     "build:android:preview": "eas build --platform android --profile preview"
   },
   "dependencies": {
@@ -21,7 +20,6 @@
     "expo-haptics": "~14.0.1",
     "expo-linear-gradient": "~14.0.2",
     "expo-status-bar": "~2.0.1",
-    "firebase": "^10.14.0",
     "react": "18.3.2",
     "react-native": "0.76.3",
     "react-native-paper": "^5.12.5",
